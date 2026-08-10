@@ -31,6 +31,14 @@ func (s *Server) Run(ctx context.Context) error {
 		Name:        "get_mapping_result",
 		Description: "Return generated artifact paths and summary for a completed mapping job.",
 	}, s.getMappingResult)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_next_mapping_item",
+		Description: "Return the next unmapped entrypoint and its mechanical evidence package for LLM documentation.",
+	}, s.getNextMappingItem)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mark_mapping_item_mapped",
+		Description: "Persist the final Markdown documentation for an entrypoint and mark it as mapped.",
+	}, s.markMappingItemMapped)
 	return server.Run(ctx, &mcp.StdioTransport{})
 }
 

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,6 +63,38 @@ func TestMCPStdioTools(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(out, "graph.json")); err != nil {
 		t.Fatalf("graph artifact missing: %v", err)
+	}
+
+	next := callTool[map[string]any](t, ctx, session, "get_next_mapping_item", map[string]any{
+		"jobId":                     jobID,
+		"includeMechanicalMarkdown": true,
+	})
+	if next["done"] == true || next["item"] == nil {
+		t.Fatalf("expected next mapping item: %+v", next)
+	}
+	item := next["item"].(map[string]any)
+	entryPointID, _ := item["entryPointId"].(string)
+	if entryPointID == "" {
+		t.Fatalf("missing entrypoint id in next item: %+v", item)
+	}
+	if markdown, _ := item["mechanicalMarkdown"].(string); !strings.Contains(markdown, "Technical Evidence") {
+		t.Fatalf("expected mechanical markdown evidence in next item")
+	}
+	final := callTool[map[string]any](t, ctx, session, "mark_mapping_item_mapped", map[string]any{
+		"jobId":        jobID,
+		"entryPointId": entryPointID,
+		"title":        "Demo feature",
+		"markdown":     "# Demo feature\n\nFinal user-facing mapping.\n",
+	})
+	if final["done"] != true {
+		t.Fatalf("expected single-item queue to be done after mark: %+v", final)
+	}
+	finalPath, _ := final["finalDocPath"].(string)
+	if finalPath == "" {
+		t.Fatalf("missing final doc path: %+v", final)
+	}
+	if _, err := os.Stat(finalPath); err != nil {
+		t.Fatalf("final mapped markdown missing: %v", err)
 	}
 }
 

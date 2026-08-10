@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/bee/java-process-mapper/internal/flow"
+	"github.com/bee/java-process-mapper/internal/mappingstate"
 	"github.com/bee/java-process-mapper/internal/model"
 )
 
@@ -21,6 +22,8 @@ type Artifacts struct {
 	Index         string   `json:"index"`
 	Visualization string   `json:"visualization"`
 	Gaps          string   `json:"gaps"`
+	MappingState  string   `json:"mappingState"`
+	FeaturesDir   string   `json:"featuresDir"`
 	Docs          []string `json:"docs"`
 }
 
@@ -29,6 +32,10 @@ func Write(project *model.Project, outputDir string) (Artifacts, error) {
 	docsDir := filepath.Join(outputDir, "docs")
 	processesDir := filepath.Join(docsDir, "processes")
 	if err := os.MkdirAll(processesDir, 0o755); err != nil {
+		return Artifacts{}, err
+	}
+	state, err := mappingstate.Initialize(outputDir, project)
+	if err != nil {
 		return Artifacts{}, err
 	}
 
@@ -45,6 +52,8 @@ func Write(project *model.Project, outputDir string) (Artifacts, error) {
 		Index:         filepath.Join(docsDir, "index.md"),
 		Visualization: filepath.Join(docsDir, "visualization.html"),
 		Gaps:          filepath.Join(docsDir, "gaps.md"),
+		MappingState:  mappingstate.StatePath(outputDir),
+		FeaturesDir:   mappingstate.FinalDocsDir(outputDir),
 		Docs:          []string{},
 	}
 
@@ -67,18 +76,12 @@ func Write(project *model.Project, outputDir string) (Artifacts, error) {
 		return Artifacts{}, err
 	}
 
-	seenDocNames := map[string]int{}
-	for _, entry := range project.EntryPoints {
-		baseName := safeFileName(entry.Kind + "-" + entry.Name)
-		if baseName == "" {
-			baseName = safeFileName(entry.ID)
+	for _, item := range state.Items {
+		entry := findEntryPoint(project, item.EntryPointID)
+		if entry.ID == "" {
+			continue
 		}
-		name := baseName
-		if seenDocNames[baseName] > 0 {
-			name = fmt.Sprintf("%s-%d", baseName, seenDocNames[baseName]+1)
-		}
-		seenDocNames[baseName]++
-		path := filepath.Join(processesDir, name+".md")
+		path := item.MechanicalDocPath
 		trace := traces[entry.ID]
 		if err := os.WriteFile(path, []byte(renderProcess(project, trace)), 0o644); err != nil {
 			return Artifacts{}, err
@@ -2591,6 +2594,18 @@ func renderGaps(project *model.Project) string {
 		fmt.Fprintf(&b, "| %s | %s | `%s:%d` |\n", gap.Severity, gap.Message, gap.Evidence.Path, gap.Evidence.Line)
 	}
 	return b.String()
+}
+
+func findEntryPoint(project *model.Project, id string) model.EntryPoint {
+	if project == nil {
+		return model.EntryPoint{}
+	}
+	for _, entry := range project.EntryPoints {
+		if entry.ID == id {
+			return entry
+		}
+	}
+	return model.EntryPoint{}
 }
 
 func findType(project *model.Project, id string) model.Type {
