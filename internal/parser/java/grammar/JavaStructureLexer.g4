@@ -1,0 +1,57 @@
+lexer grammar JavaStructureLexer;
+
+PACKAGE: 'package';
+IMPORT: 'import';
+CLASS: 'class';
+INTERFACE: 'interface';
+ENUM: 'enum';
+RECORD: 'record';
+PUBLIC: 'public';
+PROTECTED: 'protected';
+PRIVATE: 'private';
+STATIC: 'static';
+FINAL: 'final';
+ABSTRACT: 'abstract';
+SYNCHRONIZED: 'synchronized';
+NATIVE: 'native';
+DEFAULT: 'default';
+STRICTFP: 'strictfp';
+VOID: 'void';
+EXTENDS: 'extends';
+IMPLEMENTS: 'implements';
+THROWS: 'throws';
+NEW: 'new';
+RETURN: 'return';
+IF: 'if';
+FOR: 'for';
+WHILE: 'while';
+SWITCH: 'switch';
+TRY: 'try';
+CATCH: 'catch';
+
+AT: '@';
+LPAREN: '(';
+RPAREN: ')';
+LBRACE: '{';
+RBRACE: '}';
+LBRACK: '[';
+RBRACK: ']';
+SEMI: ';';
+COMMA: ',';
+DOT: '.';
+ASSIGN: '=';
+COLON: ':';
+DOUBLE_COLON: '::';
+LT: '<';
+GT: '>';
+QUESTION: '?';
+
+STRING_LITERAL: '"' ( '\\' . | ~["\\\r\n] )* '"';
+CHAR_LITERAL: '\'' ( '\\' . | ~['\\\r\n] )* '\'';
+NUMBER_LITERAL: [0-9]+ ('.' [0-9]+)?;
+IDENTIFIER: [A-Za-z_$] [A-Za-z0-9_$]*;
+
+LINE_COMMENT: '//' ~[\r\n]* -> channel(HIDDEN);
+BLOCK_COMMENT: '/*' .*? '*/' -> channel(HIDDEN);
+WS: [ \t\r\n\f]+ -> channel(HIDDEN);
+OTHER: .;
