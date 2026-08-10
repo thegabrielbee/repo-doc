@@ -123,12 +123,14 @@ Se o usuario pedir para continuar, repetir a partir de `get_next_mapping_item`.
 - Incluir dependencias somente quando a evidencia mecanica ligar a dependencia ao processo selecionado, direta ou transitivamente.
 - Diferenciar dependencia `direta` e `indireta`.
 - Condicionais devem aparecer quando ajudam a explicar ramificacoes de negocio ou caminhos tecnicos relevantes.
+- Incluir um diagrama de negocio em Mermaid logo apos o resumo para negocio.
+- Incluir um diagrama tecnico em Mermaid no inicio do mapeamento tecnico, antes da entrada do processo.
 
 ## Formato final do Markdown
 
 Usar esta estrutura e esta ordem de secoes para cada processo mapeado:
 
-```md
+````md
 # <titulo claro do processo>
 
 ## Produto
@@ -146,12 +148,26 @@ Usar esta estrutura e esta ordem de secoes para cada processo mapeado:
 ## Resumo para negocio
 <Explicar o que o processo faz em termos de negocio. Evitar detalhes de implementacao, exceto quando eles mudam o comportamento de negocio.>
 
+## Diagrama de negocio
+```mermaid
+flowchart TD
+  A["<inicio ou evento de negocio>"] --> B["<acao ou decisao de negocio>"]
+  B --> C["<resultado de negocio>"]
+```
+
 ## Passo a passo de negocio
 | Ordem | Passo | Entrada | Saida | Observacoes |
 | --- | --- | --- | --- | --- |
 | 1 | <acao de negocio> | <entrada> | <saida> | <observacoes/confianca> |
 
 ## Mapeamento tecnico
+### Diagrama tecnico
+```mermaid
+flowchart TD
+  A["<entrypoint>\n<descricao curta>"] -->|"<acao/chamada>"| B["<componente.operacao>\n<o que faz>"]
+  B -->|"<acao/chamada>"| C["<dependencia ou componente>\n<o que faz>"]
+```
+
 ### Entrada do processo
 - Tipo: <HTTP | scheduler | listener | runner | batch | command | repository | method | other>
 - Recurso: <rota, schedule, topico, comando, metodo ou trigger>
@@ -166,14 +182,6 @@ Usar esta estrutura e esta ordem de secoes para cada processo mapeado:
 
 ### Entradas aceitas
 | Nome | Origem | Tipo | Obrigatorio | Evidencia |
-| --- | --- | --- | --- | --- |
-
-### Saidas produzidas
-| Nome | Destino | Tipo | Evidencia |
-| --- | --- | --- | --- |
-
-## Componentes e operacoes
-| Componente | Operacao | Papel no processo | Conteudo relevante | Evidencia |
 | --- | --- | --- | --- | --- |
 
 ## Dependencias
@@ -204,16 +212,14 @@ Usar esta estrutura e esta ordem de secoes para cada processo mapeado:
 ## Lacunas e incertezas
 | Item | Motivo | Impacto | Proxima acao sugerida |
 | --- | --- | --- | --- |
-
-## Evidencias principais
-| Tipo | Simbolo/propriedade | Arquivo | Linha |
-| --- | --- | --- | --- |
-```
+````
 
 ## Orientacao dos campos
 
 - `Produto.Nome`: usar evidencia explicita quando existir. Se nao existir, inferir pelo repositorio ou modulo e marcar como `inferido`.
 - `Feature.Nome`: inferir por rota, scheduler, listener, fila, comando, classe, metodo, funcao ou vocabulario de dominio quando nao houver nome explicito.
+- `Diagrama de negocio`: representar o fluxo em termos de negocio, sem nomes tecnicos de classes, funcoes, tabelas ou infraestrutura, salvo quando forem termos conhecidos pelo usuario final.
+- `Diagrama tecnico`: representar entrypoint, classes/modulos/funcoes, chamadas relevantes e dependencias, com uma descricao curta do papel de cada item.
 - `Fluxo tecnico.Nivel`: usar `0` para o entrypoint, `1` para chamadas diretas e `2+` para chamadas transitivas.
 - `Condicao`: incluir a linha do `if`, `else if`, `else`, `switch`, `match` ou equivalente quando a condicao muda o caminho tecnico ou a regra de negocio.
 - `Direta ou indireta`: usar `direta` quando o componente/operacao selecionado acessa a dependencia; usar `indireta` quando aparece por chamada transitiva.
