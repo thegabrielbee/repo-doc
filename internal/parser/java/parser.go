@@ -189,7 +189,7 @@ func parseField(tokens []token, start, end int, typ model.Type) model.Field {
 	}
 	nameIdx := -1
 	for i := len(clean) - 1; i >= 0; i-- {
-		if clean[i].typ == antlrparser.JavaStructureLexerIDENTIFIER {
+		if isIdentifierLike(clean[i]) {
 			nameIdx = i
 			break
 		}
@@ -231,7 +231,7 @@ func parseMethods(tokens []token, bodyStart, bodyEnd int, typ model.Type) []mode
 				continue
 			}
 			nameIdx := previousDefault(tokens, i-1)
-			if nameIdx < 0 || tokens[nameIdx].typ != antlrparser.JavaStructureLexerIDENTIFIER {
+			if nameIdx < 0 || !isIdentifierLike(tokens[nameIdx]) {
 				continue
 			}
 			if nameIdx > 0 && tokens[nameIdx-1].typ == antlrparser.JavaStructureLexerAT {
@@ -258,8 +258,9 @@ func parseMethods(tokens []token, bodyStart, bodyEnd int, typ model.Type) []mode
 				ID:          stableID("method", typ.ID, name, strconv.Itoa(tokens[nameIdx].line)),
 				TypeID:      typ.ID,
 				Name:        name,
+				Modifiers:   collectModifiers(tokens[declStart:nameIdx]),
 				ReturnType:  returnType(tokens, declStart, nameIdx, typ.Name),
-				Parameters:  parseParameters(tokens, i+1, paramsEnd),
+				Parameters:  parseParameters(tokens, i+1, paramsEnd, typ.FilePath),
 				Annotations: annotations,
 				StartLine:   startLineWithAnnotations(tokens[declStart].line, annotations),
 				Evidence:    evidence(typ.FilePath, tokens[nameIdx].line, "method", name),
@@ -322,7 +323,7 @@ func parseLocalVariable(tokens []token, start, end int, path, methodID string) m
 	}
 	nameIdx := -1
 	for i := len(clean) - 1; i >= 0; i-- {
-		if clean[i].typ == antlrparser.JavaStructureLexerIDENTIFIER {
+		if isIdentifierLike(clean[i]) {
 			nameIdx = i
 			break
 		}
@@ -394,7 +395,7 @@ func looksLikeLocalType(tokens []token) bool {
 		return false
 	}
 	switch tokens[0].typ {
-	case antlrparser.JavaStructureLexerIDENTIFIER, antlrparser.JavaStructureLexerVOID:
+	case antlrparser.JavaStructureLexerIDENTIFIER, antlrparser.JavaStructureLexerRECORD, antlrparser.JavaStructureLexerVOID:
 		return true
 	default:
 		return false
@@ -522,13 +523,13 @@ func parseCalls(tokens []token, start, end int, path string) []model.Call {
 	seen := map[string]bool{}
 	var calls []model.Call
 	for i := start; i+1 < end; i++ {
-		if tokens[i].typ != antlrparser.JavaStructureLexerIDENTIFIER || tokens[i+1].typ != antlrparser.JavaStructureLexerLPAREN {
+		if !isIdentifierLike(tokens[i]) || tokens[i+1].typ != antlrparser.JavaStructureLexerLPAREN {
 			continue
 		}
 		method := tokens[i].text
 		receiver := ""
 		target := method
-		if i >= 2 && tokens[i-1].typ == antlrparser.JavaStructureLexerDOT && tokens[i-2].typ == antlrparser.JavaStructureLexerIDENTIFIER {
+		if i >= 2 && tokens[i-1].typ == antlrparser.JavaStructureLexerDOT && isIdentifierLike(tokens[i-2]) {
 			receiver = tokens[i-2].text
 			target = receiver + "." + method
 		}
@@ -549,13 +550,13 @@ func parseCalls(tokens []token, start, end int, path string) []model.Call {
 	return calls
 }
 
-func parseParameters(tokens []token, start, end int) []model.Parameter {
+func parseParameters(tokens []token, start, end int, path string) []model.Parameter {
 	var params []model.Parameter
 	segmentStart := start
 	depth := 0
 	for i := start; i <= end; i++ {
 		if i == end || (tokens[i].typ == antlrparser.JavaStructureLexerCOMMA && depth == 0) {
-			if param := parseParameter(tokens[segmentStart:i]); param.Name != "" || param.Type != "" {
+			if param := parseParameter(tokens[segmentStart:i], path); param.Name != "" || param.Type != "" {
 				params = append(params, param)
 			}
 			segmentStart = i + 1
@@ -573,25 +574,42 @@ func parseParameters(tokens []token, start, end int) []model.Parameter {
 	return params
 }
 
-func parseParameter(tokens []token) model.Parameter {
+func parseParameter(tokens []token, path string) model.Parameter {
+	annotations := collectAnnotationsInRange(tokens, path)
 	clean := stripAnnotationsAndModifiers(tokens)
 	if len(clean) == 0 {
-		return model.Parameter{}
+		return model.Parameter{Annotations: annotations}
 	}
 	nameIdx := -1
 	for i := len(clean) - 1; i >= 0; i-- {
-		if clean[i].typ == antlrparser.JavaStructureLexerIDENTIFIER {
+		if isIdentifierLike(clean[i]) {
 			nameIdx = i
 			break
 		}
 	}
 	if nameIdx < 0 {
-		return model.Parameter{Type: joinTokens(clean)}
+		return model.Parameter{Type: joinTokens(clean), Annotations: annotations}
 	}
 	return model.Parameter{
-		Name: clean[nameIdx].text,
-		Type: strings.TrimSpace(joinTokens(clean[:nameIdx])),
+		Name:        clean[nameIdx].text,
+		Type:        strings.TrimSpace(joinTokens(clean[:nameIdx])),
+		Annotations: annotations,
 	}
+}
+
+func collectAnnotationsInRange(tokens []token, path string) []model.Annotation {
+	var annotations []model.Annotation
+	for i := 0; i < len(tokens); i++ {
+		if tokens[i].typ != antlrparser.JavaStructureLexerAT {
+			continue
+		}
+		annotation, next := readAnnotation(tokens, i, path)
+		if annotation.Name != "" {
+			annotations = append(annotations, annotation)
+		}
+		i = next - 1
+	}
+	return annotations
 }
 
 func startLineWithAnnotations(defaultLine int, annotations []model.Annotation) int {
@@ -606,11 +624,42 @@ func startLineWithAnnotations(defaultLine int, annotations []model.Annotation) i
 
 func collectLeadingAnnotations(tokens []token, idx int, path string) []model.Annotation {
 	start := idx - 1
+	parenDepth := 0
+	braceDepth := 0
+	bracketDepth := 0
 	for start >= 0 {
 		switch tokens[start].typ {
-		case antlrparser.JavaStructureLexerSEMI, antlrparser.JavaStructureLexerLBRACE, antlrparser.JavaStructureLexerRBRACE:
-			start++
-			goto collect
+		case antlrparser.JavaStructureLexerRPAREN:
+			parenDepth++
+		case antlrparser.JavaStructureLexerLPAREN:
+			if parenDepth > 0 {
+				parenDepth--
+			}
+		case antlrparser.JavaStructureLexerRBRACE:
+			if parenDepth > 0 || bracketDepth > 0 {
+				braceDepth++
+			} else {
+				start++
+				goto collect
+			}
+		case antlrparser.JavaStructureLexerLBRACE:
+			if braceDepth > 0 {
+				braceDepth--
+			} else if parenDepth == 0 && bracketDepth == 0 {
+				start++
+				goto collect
+			}
+		case antlrparser.JavaStructureLexerRBRACK:
+			bracketDepth++
+		case antlrparser.JavaStructureLexerLBRACK:
+			if bracketDepth > 0 {
+				bracketDepth--
+			}
+		case antlrparser.JavaStructureLexerSEMI:
+			if parenDepth == 0 && braceDepth == 0 && bracketDepth == 0 {
+				start++
+				goto collect
+			}
 		}
 		start--
 	}
@@ -633,11 +682,11 @@ collect:
 func readAnnotation(tokens []token, start int, path string) (model.Annotation, int) {
 	i := start + 1
 	var nameParts []string
-	if i < len(tokens) && (tokens[i].typ == antlrparser.JavaStructureLexerIDENTIFIER || tokens[i].typ == antlrparser.JavaStructureLexerINTERFACE) {
+	if i < len(tokens) && (isIdentifierLike(tokens[i]) || tokens[i].typ == antlrparser.JavaStructureLexerINTERFACE) {
 		nameParts = append(nameParts, tokens[i].text)
 		i++
 		for i+1 < len(tokens) && tokens[i].typ == antlrparser.JavaStructureLexerDOT &&
-			(tokens[i+1].typ == antlrparser.JavaStructureLexerIDENTIFIER || tokens[i+1].typ == antlrparser.JavaStructureLexerINTERFACE) {
+			(isIdentifierLike(tokens[i+1]) || tokens[i+1].typ == antlrparser.JavaStructureLexerINTERFACE) {
 			nameParts = append(nameParts, tokens[i].text, tokens[i+1].text)
 			i += 2
 		}
@@ -666,13 +715,13 @@ func readAnnotation(tokens []token, start int, path string) (model.Annotation, i
 func annotationValues(tokens []token, start, end int) map[string]string {
 	values := map[string]string{}
 	for i := start; i < end; i++ {
-		if tokens[i].typ == antlrparser.JavaStructureLexerIDENTIFIER && i+2 < end && tokens[i+1].typ == antlrparser.JavaStructureLexerASSIGN {
+		if isIdentifierLike(tokens[i]) && i+2 < end && tokens[i+1].typ == antlrparser.JavaStructureLexerASSIGN {
 			valueEnd := annotationValueEnd(tokens, i+2, end)
 			values[tokens[i].text] = cleanLiteral(joinTokens(tokens[i+2 : valueEnd]))
 			i = valueEnd - 1
 			continue
 		}
-		if _, ok := values["value"]; !ok && (tokens[i].typ == antlrparser.JavaStructureLexerSTRING_LITERAL || tokens[i].typ == antlrparser.JavaStructureLexerIDENTIFIER) {
+		if _, ok := values["value"]; !ok && (tokens[i].typ == antlrparser.JavaStructureLexerSTRING_LITERAL || isIdentifierLike(tokens[i])) {
 			values["value"] = cleanLiteral(tokens[i].text)
 		}
 	}
@@ -724,7 +773,7 @@ func collectTypeList(tokens []token, from, to, keyword int) []string {
 			current = nil
 			continue
 		}
-		if tokens[i].typ == antlrparser.JavaStructureLexerIDENTIFIER || tokens[i].typ == antlrparser.JavaStructureLexerDOT {
+		if isIdentifierLike(tokens[i]) || tokens[i].typ == antlrparser.JavaStructureLexerDOT {
 			current = append(current, tokens[i].text)
 		}
 	}
@@ -766,6 +815,32 @@ func stripAnnotationsAndModifiers(tokens []token) []token {
 		clean = append(clean, tokens[i])
 	}
 	return clean
+}
+
+func collectModifiers(tokens []token) []string {
+	seen := map[string]bool{}
+	var modifiers []string
+	for i := 0; i < len(tokens); i++ {
+		if tokens[i].typ == antlrparser.JavaStructureLexerAT {
+			if i+1 < len(tokens) {
+				i++
+			}
+			if i+1 < len(tokens) && tokens[i+1].typ == antlrparser.JavaStructureLexerLPAREN {
+				end := findMatching(tokens, i+1, antlrparser.JavaStructureLexerLPAREN, antlrparser.JavaStructureLexerRPAREN)
+				if end > i {
+					i = end
+				}
+			}
+			continue
+		}
+		name := modifierName(tokens[i].typ)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		modifiers = append(modifiers, name)
+	}
+	return modifiers
 }
 
 func declarationStart(tokens []token, nameIdx int) int {
@@ -829,7 +904,7 @@ func typeKind(tokens []token, i int) string {
 
 func nextIdentifier(tokens []token, start int) int {
 	for i := start; i < len(tokens); i++ {
-		if tokens[i].typ == antlrparser.JavaStructureLexerIDENTIFIER {
+		if isIdentifierLike(tokens[i]) {
 			return i
 		}
 		if tokens[i].typ == antlrparser.JavaStructureLexerLBRACE || tokens[i].typ == antlrparser.JavaStructureLexerSEMI {
@@ -976,17 +1051,39 @@ func needsSpace(left, right token) bool {
 }
 
 func isModifier(typ int) bool {
+	return modifierName(typ) != ""
+}
+
+func modifierName(typ int) string {
 	switch typ {
-	case antlrparser.JavaStructureLexerPUBLIC,
-		antlrparser.JavaStructureLexerPROTECTED,
-		antlrparser.JavaStructureLexerPRIVATE,
-		antlrparser.JavaStructureLexerSTATIC,
-		antlrparser.JavaStructureLexerFINAL,
-		antlrparser.JavaStructureLexerABSTRACT,
-		antlrparser.JavaStructureLexerSYNCHRONIZED,
-		antlrparser.JavaStructureLexerNATIVE,
-		antlrparser.JavaStructureLexerDEFAULT,
-		antlrparser.JavaStructureLexerSTRICTFP:
+	case antlrparser.JavaStructureLexerPUBLIC:
+		return "public"
+	case antlrparser.JavaStructureLexerPROTECTED:
+		return "protected"
+	case antlrparser.JavaStructureLexerPRIVATE:
+		return "private"
+	case antlrparser.JavaStructureLexerSTATIC:
+		return "static"
+	case antlrparser.JavaStructureLexerFINAL:
+		return "final"
+	case antlrparser.JavaStructureLexerABSTRACT:
+		return "abstract"
+	case antlrparser.JavaStructureLexerSYNCHRONIZED:
+		return "synchronized"
+	case antlrparser.JavaStructureLexerNATIVE:
+		return "native"
+	case antlrparser.JavaStructureLexerDEFAULT:
+		return "default"
+	case antlrparser.JavaStructureLexerSTRICTFP:
+		return "strictfp"
+	default:
+		return ""
+	}
+}
+
+func isIdentifierLike(tok token) bool {
+	switch tok.typ {
+	case antlrparser.JavaStructureLexerIDENTIFIER, antlrparser.JavaStructureLexerRECORD:
 		return true
 	default:
 		return false

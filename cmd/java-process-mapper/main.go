@@ -48,7 +48,8 @@ func runScan(args []string) error {
 	fs.SetOutput(os.Stderr)
 	root := fs.String("root", "", "path to Java repository root")
 	out := fs.String("out", "", "output directory")
-	addons := fs.String("addons", "spring", "comma-separated addons")
+	addons := fs.String("addons", "spring", "comma-separated addons; default spring, use javaee for Java EE/Jakarta EE")
+	javaVersion := fs.String("java-version", "", "override Java source version, for example 8, 11, 17 or 21")
 	includeTests := fs.Bool("include-tests", false, "include test source folders")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -60,6 +61,7 @@ func runScan(args []string) error {
 		RootPath:     *root,
 		OutputDir:    *out,
 		Addons:       splitCSV(*addons),
+		JavaVersion:  *javaVersion,
 		IncludeTests: *includeTests,
 	}, nil)
 	if err != nil {
@@ -99,6 +101,7 @@ func usage() {
 Usage:
   java-process-mapper serve
   java-process-mapper scan --root <path> --out <path> --addons spring
+  java-process-mapper scan --root <path> --addons javaee --java-version 8
 
 Commands:
   serve   Start MCP server over stdio.

@@ -37,6 +37,7 @@ type Annotation struct {
 type Project struct {
 	Name             string           `json:"name"`
 	Root             string           `json:"root"`
+	JavaVersion      string           `json:"javaVersion,omitempty"`
 	Modules          []Module         `json:"modules"`
 	SourceFiles      []SourceFile     `json:"sourceFiles"`
 	Types            []Type           `json:"types"`
@@ -60,14 +61,18 @@ type Summary struct {
 }
 
 type Module struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	Path           string   `json:"path"`
-	BuildTool      string   `json:"buildTool,omitempty"`
-	SourceRoots    []string `json:"sourceRoots"`
-	JavaFiles      []string `json:"javaFiles"`
-	ConfigFiles    []string `json:"configFiles"`
-	MigrationFiles []string `json:"migrationFiles"`
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Path            string   `json:"path"`
+	BuildTool       string   `json:"buildTool,omitempty"`
+	Packaging       string   `json:"packaging,omitempty"`
+	JavaVersion     string   `json:"javaVersion,omitempty"`
+	SourceRoots     []string `json:"sourceRoots"`
+	JavaFiles       []string `json:"javaFiles"`
+	ConfigFiles     []string `json:"configFiles"`
+	MigrationFiles  []string `json:"migrationFiles"`
+	DescriptorFiles []string `json:"descriptorFiles,omitempty"`
+	UIFiles         []string `json:"uiFiles,omitempty"`
 }
 
 type SourceFile struct {
@@ -115,6 +120,7 @@ type Method struct {
 	ID             string          `json:"id"`
 	TypeID         string          `json:"typeId"`
 	Name           string          `json:"name"`
+	Modifiers      []string        `json:"modifiers,omitempty"`
 	ReturnType     string          `json:"returnType,omitempty"`
 	Parameters     []Parameter     `json:"parameters,omitempty"`
 	LocalVariables []LocalVariable `json:"localVariables,omitempty"`
@@ -130,8 +136,9 @@ type Method struct {
 }
 
 type Parameter struct {
-	Name string `json:"name,omitempty"`
-	Type string `json:"type,omitempty"`
+	Name        string       `json:"name,omitempty"`
+	Type        string       `json:"type,omitempty"`
+	Annotations []Annotation `json:"annotations,omitempty"`
 }
 
 type LocalVariable struct {

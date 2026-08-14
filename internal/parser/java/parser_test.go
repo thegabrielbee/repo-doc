@@ -12,8 +12,14 @@ func TestParseFileJavaVersions(t *testing.T) {
 		"java8": `
 			package com.acme.legacy;
 			import java.util.Optional;
+			import java.util.Arrays;
 			public class LegacyService {
 				public Optional<String> find(String id) { return Optional.of(id.trim()); }
+				public void callbacks() {
+					Arrays.asList("a").forEach(this::accept);
+					Runnable run = () -> accept("ok");
+				}
+				void accept(String value) {}
 			}
 		`,
 		"java11": `
@@ -59,7 +65,46 @@ func TestParseFileJavaVersions(t *testing.T) {
 			if len(types[0].Methods) == 0 && name != "java17" {
 				t.Fatalf("expected methods in first type: %+v", types[0])
 			}
+			if name == "java8" && !containsString(types[0].Methods[0].Modifiers, "public") {
+				t.Fatalf("expected public modifier on first Java 8 method, got %+v", types[0].Methods[0].Modifiers)
+			}
 		})
+	}
+}
+
+func TestParseFileAnnotatedParametersAndJava8RecordIdentifier(t *testing.T) {
+	source := `
+		package com.acme.legacy;
+		import javax.enterprise.event.Observes;
+
+		class record {
+			void observe(@Observes OrderEvent event) {
+				handle(event);
+			}
+			void handle(OrderEvent event) {}
+		}
+	`
+	path := filepath.Join(t.TempDir(), "Record.java")
+	if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, types, _, err := ParseFile(path, "module-legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(types) != 1 || types[0].Name != "record" {
+		t.Fatalf("expected Java 8 class named record, got %+v", types)
+	}
+	method := types[0].Methods[0]
+	if len(method.Parameters) != 1 {
+		t.Fatalf("parameters = %+v, want one", method.Parameters)
+	}
+	param := method.Parameters[0]
+	if param.Name != "event" || param.Type != "OrderEvent" {
+		t.Fatalf("parameter = %+v, want event OrderEvent", param)
+	}
+	if len(param.Annotations) != 1 || param.Annotations[0].Name != "Observes" {
+		t.Fatalf("expected @Observes parameter annotation, got %+v", param.Annotations)
 	}
 }
 
@@ -135,4 +180,13 @@ func TestParseFileLocalVariables(t *testing.T) {
 	if !foundOrders {
 		t.Fatalf("expected local variable orders, got %+v", method.LocalVariables)
 	}
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }

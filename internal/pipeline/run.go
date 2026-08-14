@@ -28,7 +28,7 @@ func Run(opts analysis.Options, progress analysis.ProgressFunc) (Result, error) 
 		opts.OutputDir = filepath.Join(opts.RootPath, "out", "java-process-mapper")
 	}
 	report(progress, "discovering", nil)
-	project, err := discovery.Discover(discovery.Options{RootPath: opts.RootPath, IncludeTests: opts.IncludeTests})
+	project, err := discovery.Discover(discovery.Options{RootPath: opts.RootPath, JavaVersion: opts.JavaVersion, IncludeTests: opts.IncludeTests})
 	if err != nil {
 		return Result{}, err
 	}

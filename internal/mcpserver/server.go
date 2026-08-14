@@ -21,7 +21,7 @@ func (s *Server) Run(ctx context.Context) error {
 	server := mcp.NewServer(&mcp.Implementation{Name: "java-process-mapper", Version: "0.1.0"}, nil)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "start_mapping",
-		Description: "Start static Java/Spring process mapping and generate Markdown plus JSON artifacts.",
+		Description: "Start static Java process mapping with framework addons and generate Markdown plus JSON artifacts.",
 	}, s.startMapping)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_mapping_status",
@@ -45,7 +45,8 @@ func (s *Server) Run(ctx context.Context) error {
 type StartMappingInput struct {
 	RootPath     string   `json:"rootPath" jsonschema:"absolute or relative path to the Java repository root"`
 	OutputDir    string   `json:"outputDir,omitempty" jsonschema:"directory where graph.json, findings.json and docs will be written"`
-	Addons       []string `json:"addons,omitempty" jsonschema:"framework addons to run; use spring for Spring/Spring Boot"`
+	Addons       []string `json:"addons,omitempty" jsonschema:"framework addons to run; use spring for Spring/Spring Boot or javaee for Java EE/Jakarta EE"`
+	JavaVersion  string   `json:"javaVersion,omitempty" jsonschema:"override Java source version, for example 8, 11, 17 or 21"`
 	IncludeTests bool     `json:"includeTests,omitempty" jsonschema:"include src/test and test folders in analysis"`
 }
 
@@ -64,6 +65,7 @@ func (s *Server) startMapping(ctx context.Context, _ *mcp.CallToolRequest, input
 		RootPath:     input.RootPath,
 		OutputDir:    input.OutputDir,
 		Addons:       input.Addons,
+		JavaVersion:  input.JavaVersion,
 		IncludeTests: input.IncludeTests,
 	})
 	return nil, StartMappingOutput{JobID: job.ID, Status: job.Status, Phase: job.Phase, OutputDir: job.OutputDir}, nil

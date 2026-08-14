@@ -36,9 +36,16 @@ Se o MCP server nao estiver disponivel, informar que o mapper precisa estar roda
 Exemplos:
 
 - `spring` para aplicacoes Spring;
-- futuros addons podem cobrir Go, Python, frameworks web, mensageria, cloud, banco de dados ou outros ecossistemas.
+- `javaee` para aplicacoes Java EE/Jakarta EE legado, incluindo JAX-RS, JAX-WS,
+  JSF/CDI, EJB, JPA, JMS/MDB, Servlets, Filters, JAAS, EAR/WAR e XHTML;
+- `spring,javaee` ou `["spring","javaee"]` para bases mistas.
 
-Nao tratar `spring` como obrigatorio. Usar o addon solicitado pelo usuario ou inferido com seguranca a partir do repositorio. Quando nao houver certeza, pedir confirmacao ou usar a configuracao padrao do mapper.
+O default do mapper e `spring`. Nao tratar `spring` como obrigatorio no
+workflow: usar o addon solicitado pelo usuario ou inferido com seguranca a
+partir do repositorio. Quando nao houver certeza, pedir confirmacao ou usar a
+configuracao padrao do mapper.
+
+Referencia completa de parametros e valores: `docs/usage-parameters.md`.
 
 ## Fluxo da skill
 
@@ -50,7 +57,10 @@ Se o usuario fornecer apenas o caminho do repositorio, chamar `start_mapping` co
 
 - `rootPath`: caminho da base de codigo;
 - `outputDir`: diretorio onde os artefatos devem ser gerados;
-- `addons`: lista de addons a ativar, por exemplo `["spring"]`;
+- `addons`: lista de addons a ativar, por exemplo `["spring"]`, `["javaee"]`
+  ou `["spring","javaee"]`;
+- `javaVersion`: versao Java explicita quando informada pelo usuario, por
+  exemplo `"8"`; omitir para usar a inferencia Maven/Gradle;
 - `includeTests`: usar `false` por padrao, salvo quando o usuario pedir para incluir testes.
 
 ### 2. Aguardar o mapeamento mecanico

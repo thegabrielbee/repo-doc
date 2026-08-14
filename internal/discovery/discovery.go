@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -15,6 +16,7 @@ import (
 
 type Options struct {
 	RootPath     string
+	JavaVersion  string
 	IncludeTests bool
 }
 
@@ -56,6 +58,7 @@ func Discover(opts Options) (*model.Project, error) {
 		if err := fillModule(&modules[i], opts.IncludeTests, modulePaths); err != nil {
 			return nil, err
 		}
+		fillModuleBuildMetadata(root, &modules[i], opts.JavaVersion)
 		for _, cfg := range modules[i].ConfigFiles {
 			props, err := parseConfigFile(cfg)
 			if err != nil {
@@ -75,6 +78,7 @@ func Discover(opts Options) (*model.Project, error) {
 
 	sort.Slice(modules, func(i, j int) bool { return modules[i].Path < modules[j].Path })
 	project.Modules = modules
+	project.JavaVersion = aggregateJavaVersion(modules)
 	project.RefreshSummary()
 	return project, nil
 }
@@ -143,6 +147,10 @@ func fillModule(module *model.Module, includeTests bool, modulePaths map[string]
 			module.ConfigFiles = append(module.ConfigFiles, clean)
 		case isMigrationFile(lower):
 			module.MigrationFiles = append(module.MigrationFiles, clean)
+		case isDescriptorFile(name, lower):
+			module.DescriptorFiles = append(module.DescriptorFiles, clean)
+		case isUIFile(name):
+			module.UIFiles = append(module.UIFiles, clean)
 		}
 		return nil
 	})
@@ -156,7 +164,80 @@ func fillModule(module *model.Module, includeTests bool, modulePaths map[string]
 	sort.Strings(module.JavaFiles)
 	sort.Strings(module.ConfigFiles)
 	sort.Strings(module.MigrationFiles)
+	sort.Strings(module.DescriptorFiles)
+	sort.Strings(module.UIFiles)
 	return nil
+}
+
+func fillModuleBuildMetadata(root string, module *model.Module, overrideJavaVersion string) {
+	module.Packaging = inferPackaging(module.Path, module.BuildTool)
+	if version := normalizeJavaVersion(overrideJavaVersion); version != "" {
+		module.JavaVersion = version
+		return
+	}
+	if version := inferJavaVersionFromAncestors(root, module.Path, module.BuildTool); version != "" {
+		module.JavaVersion = version
+		return
+	}
+	module.JavaVersion = "unknown"
+}
+
+func inferPackaging(modulePath, buildTool string) string {
+	switch buildTool {
+	case "maven":
+		if packaging := mavenPackaging(filepath.Join(modulePath, "pom.xml")); packaging != "" {
+			return packaging
+		}
+	case "gradle":
+		if packaging := gradlePackaging(firstExisting(modulePath, "build.gradle", "build.gradle.kts")); packaging != "" {
+			return packaging
+		}
+	}
+	return ""
+}
+
+func inferJavaVersionFromAncestors(root, modulePath, buildTool string) string {
+	root = filepath.Clean(root)
+	for dir := filepath.Clean(modulePath); ; dir = filepath.Dir(dir) {
+		if buildTool == "maven" || buildTool == "" {
+			if version := mavenJavaVersion(filepath.Join(dir, "pom.xml")); version != "" {
+				return version
+			}
+		}
+		if buildTool == "gradle" || buildTool == "" {
+			if version := gradleJavaVersion(firstExisting(dir, "build.gradle", "build.gradle.kts")); version != "" {
+				return version
+			}
+		}
+		if dir == root {
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+	}
+	return ""
+}
+
+func aggregateJavaVersion(modules []model.Module) string {
+	if len(modules) == 0 {
+		return "unknown"
+	}
+	seen := map[string]bool{}
+	for _, module := range modules {
+		version := module.JavaVersion
+		if version == "" {
+			version = "unknown"
+		}
+		seen[version] = true
+	}
+	if len(seen) == 1 {
+		for version := range seen {
+			return version
+		}
+	}
+	return "mixed"
 }
 
 func parseConfigFile(path string) ([]model.ConfigProperty, error) {
@@ -349,10 +430,179 @@ func isConfigFile(name string) bool {
 	return strings.HasPrefix(lower, "application-") && (strings.HasSuffix(lower, ".properties") || strings.HasSuffix(lower, ".yml") || strings.HasSuffix(lower, ".yaml"))
 }
 
+func isDescriptorFile(name, path string) bool {
+	lowerName := strings.ToLower(name)
+	switch lowerName {
+	case "web.xml",
+		"ejb-jar.xml",
+		"application.xml",
+		"persistence.xml",
+		"beans.xml",
+		"webservices.xml",
+		"jboss-web.xml",
+		"jboss-ejb3.xml",
+		"jboss-deployment-structure.xml",
+		"jboss-app.xml",
+		"ra.xml":
+		return true
+	}
+	return strings.HasSuffix(path, ".wsdl")
+}
+
+func isUIFile(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.HasSuffix(lower, ".xhtml") ||
+		strings.HasSuffix(lower, ".jsp") ||
+		strings.HasSuffix(lower, ".html") ||
+		strings.HasSuffix(lower, ".htm")
+}
+
 func isMigrationFile(path string) bool {
 	return strings.Contains(path, "/db/migration/") ||
 		strings.Contains(path, "/db/changelog/") ||
 		strings.Contains(path, "/liquibase/")
+}
+
+func firstExisting(dir string, names ...string) string {
+	for _, name := range names {
+		path := filepath.Join(dir, name)
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
+func mavenPackaging(path string) string {
+	data, ok := readOptionalFile(path)
+	if !ok {
+		return ""
+	}
+	return firstXMLTagValue(data, "packaging")
+}
+
+func mavenJavaVersion(path string) string {
+	data, ok := readOptionalFile(path)
+	if !ok {
+		return ""
+	}
+	props := xmlProperties(data)
+	for _, tag := range []string{
+		"maven.compiler.release",
+		"maven.compiler.source",
+		"maven.compiler.target",
+		"java.version",
+		"jdk.version",
+		"source",
+		"target",
+		"release",
+	} {
+		if version := resolveVersionValue(firstXMLTagValue(data, tag), props); version != "" {
+			return version
+		}
+	}
+	return ""
+}
+
+func gradlePackaging(path string) string {
+	data, ok := readOptionalFile(path)
+	if !ok {
+		return ""
+	}
+	lower := strings.ToLower(data)
+	switch {
+	case strings.Contains(lower, "id 'ear'") || strings.Contains(lower, "id(\"ear\")") || strings.Contains(lower, "apply plugin: 'ear'") || strings.Contains(lower, "apply(plugin = \"ear\")"):
+		return "ear"
+	case strings.Contains(lower, "id 'war'") || strings.Contains(lower, "id(\"war\")") || strings.Contains(lower, "apply plugin: 'war'") || strings.Contains(lower, "apply(plugin = \"war\")"):
+		return "war"
+	default:
+		return ""
+	}
+}
+
+func gradleJavaVersion(path string) string {
+	data, ok := readOptionalFile(path)
+	if !ok {
+		return ""
+	}
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?m)\boptions\.release\s*=\s*([A-Za-z0-9_.'"()]+)`),
+		regexp.MustCompile(`(?m)\bsourceCompatibility\s*=\s*([A-Za-z0-9_.'"()]+)`),
+		regexp.MustCompile(`(?m)\btargetCompatibility\s*=\s*([A-Za-z0-9_.'"()]+)`),
+		regexp.MustCompile(`(?m)\bsourceCompatibility\s+([A-Za-z0-9_.'"()]+)`),
+		regexp.MustCompile(`(?m)\btargetCompatibility\s+([A-Za-z0-9_.'"()]+)`),
+		regexp.MustCompile(`(?m)\blanguageVersion\s*=\s*JavaLanguageVersion\.of\(([^)]+)\)`),
+	}
+	for _, pattern := range patterns {
+		if match := pattern.FindStringSubmatch(data); len(match) == 2 {
+			if version := normalizeJavaVersion(match[1]); version != "" {
+				return version
+			}
+		}
+	}
+	return ""
+}
+
+func readOptionalFile(path string) (string, bool) {
+	if path == "" {
+		return "", false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	return string(data), true
+}
+
+func firstXMLTagValue(data, tag string) string {
+	pattern := regexp.MustCompile(`(?is)<` + regexp.QuoteMeta(tag) + `>\s*([^<]+?)\s*</` + regexp.QuoteMeta(tag) + `>`)
+	match := pattern.FindStringSubmatch(data)
+	if len(match) != 2 {
+		return ""
+	}
+	return strings.TrimSpace(match[1])
+}
+
+func xmlProperties(data string) map[string]string {
+	props := map[string]string{}
+	pattern := regexp.MustCompile(`(?is)<([A-Za-z0-9_.-]+)>\s*([^<]+?)\s*</[A-Za-z0-9_.-]+>`)
+	for _, match := range pattern.FindAllStringSubmatch(data, -1) {
+		if len(match) != 3 {
+			continue
+		}
+		props[match[1]] = strings.TrimSpace(match[2])
+	}
+	return props
+}
+
+func resolveVersionValue(value string, props map[string]string) string {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "${") && strings.HasSuffix(value, "}") {
+		key := strings.TrimSuffix(strings.TrimPrefix(value, "${"), "}")
+		value = props[key]
+	}
+	return normalizeJavaVersion(value)
+}
+
+func normalizeJavaVersion(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, `"'`)
+	value = strings.TrimPrefix(value, "JavaVersion.")
+	value = strings.TrimPrefix(value, "VERSION_")
+	value = strings.TrimPrefix(value, "VERSION.")
+	value = strings.ReplaceAll(value, "_", ".")
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if strings.HasPrefix(value, "1.") {
+		value = strings.TrimPrefix(value, "1.")
+	}
+	digits := regexp.MustCompile(`[0-9]+`).FindString(value)
+	if digits == "" {
+		return ""
+	}
+	return digits
 }
 
 func stableID(parts ...string) string {

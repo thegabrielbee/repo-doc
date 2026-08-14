@@ -7,7 +7,8 @@
    de configuracao.
 3. Parsear arquivos Java e gerar AST.
 4. Extrair simbolos e metadados relevantes.
-5. Enriquecer a analise com convencoes Spring e arquivos de properties/YAML.
+5. Enriquecer a analise com add-ons de framework/tecnologia, como Spring e
+   Java EE/Jakarta EE legado.
 6. Montar grafo tecnico de processos, classes, metodos e dependencias.
 7. Agrupar fluxos em produto, feature e processo.
 8. Gerar documentacao em Markdown/Confluence-style.
@@ -60,6 +61,42 @@ A ferramenta deve reconhecer padroes Spring comuns, incluindo:
 - `CommandLineRunner` e `ApplicationRunner`;
 - Feign, `RestTemplate`, `WebClient` e clients equivalentes.
 
+## Analise Java EE/Jakarta EE legado
+
+O add-on `javaee` reconhece tecnologias legadas comuns em servidores como
+WildFly/JBoss:
+
+- JAX-RS com `@Path` e metodos HTTP;
+- JAX-WS com `@WebService` e `@WebMethod`;
+- JSF/CDI com paginas `.xhtml`, EL como `#{bean.metodo}`, `@Named` e
+  `@ManagedBean`;
+- UI Java EE em `.jsp`, `.html` e `.htm`, incluindo scripts locais
+  referenciados pela pagina que disparam `XMLHttpRequest`, `fetch` ou
+  `WebSocket`;
+- EJB com timers `@Schedule`, `@Schedules`, `@Timeout` e lifecycle
+  `@Startup`/`@PostConstruct` em tipos gerenciados;
+- JMS/MDB com `@MessageDriven`, `onMessage` e `activationConfig`;
+- Servlets e Listeners via annotations ou `web.xml`;
+- Filters via `@WebFilter` ou `web.xml` como componentes de pipeline
+  vinculados a fluxos HTTP/Servlet quando o padrao de URL casa;
+- WebSocket via `@ServerEndpoint` e callbacks `@OnOpen`, `@OnMessage`,
+  `@OnClose`, `@OnError`;
+- JPA via entities, tabelas, `EntityManager` e `persistence.xml`;
+- JAAS/LoginModule e integracoes comuns como HTTP/SOAP clients, JavaMail,
+  FTP/SFTP, Redis/Jedis, S3 e SQS.
+
+Marcadores como `@Asynchronous`, `@Named`, `@Entity`, injecoes e declaracoes
+genericas de EJB nao sao entrypoints primarios; eles entram como contexto,
+dependencia ou metadado quando ajudarem a explicar o fluxo.
+Eventos SPI de extensao CDI, como `BeforeBeanDiscovery`, `AfterBeanDiscovery`
+e `ProcessAnnotatedType`, tambem ficam fora dos processos por serem hooks de
+boot do container, nao eventos de aplicacao.
+Filters tambem ficam fora da lista principal de processos; quando aplicaveis,
+aparecem dentro do trace HTTP/Servlet como `http_filter`.
+
+Os parametros publicos e valores normalizados ficam descritos em
+`usage-parameters.md`.
+
 ## Configuracoes
 
 Arquivos esperados:
@@ -68,6 +105,9 @@ Arquivos esperados:
 - `application.yml` e `application.yaml`;
 - profiles Spring, como `application-dev.yml`;
 - `bootstrap.properties` e `bootstrap.yml`, quando existirem;
+- descritores Java EE/Jakarta EE, como `web.xml`, `ejb-jar.xml`,
+  `application.xml`, `persistence.xml`, `beans.xml`, arquivos JBoss e WSDLs;
+- paginas UI `.xhtml`, `.jsp`, `.html` e `.htm`;
 - arquivos Maven/Gradle;
 - arquivos de migracao, como Flyway ou Liquibase.
 

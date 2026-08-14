@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bee/java-process-mapper/internal/model"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -35,6 +36,7 @@ func TestMCPStdioTools(t *testing.T) {
 		"rootPath":     sourceRoot,
 		"outputDir":    out,
 		"addons":       []string{"spring"},
+		"javaVersion":  "8",
 		"includeTests": false,
 	})
 	jobID, _ := start["jobId"].(string)
@@ -63,6 +65,17 @@ func TestMCPStdioTools(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(out, "graph.json")); err != nil {
 		t.Fatalf("graph artifact missing: %v", err)
+	}
+	findingsData, err := os.ReadFile(filepath.Join(out, "findings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var project model.Project
+	if err := json.Unmarshal(findingsData, &project); err != nil {
+		t.Fatal(err)
+	}
+	if project.JavaVersion != "8" {
+		t.Fatalf("project java version = %s, want 8", project.JavaVersion)
 	}
 
 	next := callTool[map[string]any](t, ctx, session, "get_next_mapping_item", map[string]any{

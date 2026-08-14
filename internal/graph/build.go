@@ -15,7 +15,7 @@ func Build(project *model.Project) {
 		ID:         productID,
 		Kind:       "Product",
 		Name:       project.Name,
-		Properties: map[string]any{"root": project.Root},
+		Properties: map[string]any{"root": project.Root, "javaVersion": project.JavaVersion},
 		Source:     model.SourceInferred,
 		Confidence: model.ConfidenceMedium,
 	})
@@ -26,7 +26,7 @@ func Build(project *model.Project) {
 			ID:         moduleID,
 			Kind:       "Service",
 			Name:       module.Name,
-			Properties: map[string]any{"path": module.Path, "buildTool": module.BuildTool},
+			Properties: map[string]any{"path": module.Path, "buildTool": module.BuildTool, "packaging": module.Packaging, "javaVersion": module.JavaVersion},
 			Source:     model.SourceFound,
 			Confidence: model.ConfidenceHigh,
 		})
@@ -258,7 +258,7 @@ func featureForEntryPoint(edges []model.GraphEdge, entrypoint string) string {
 
 func dependencyNodeKind(kind string) string {
 	switch kind {
-	case "datastore", "database_repository", "database_access", "database_client", "database_migration":
+	case "datastore", "database_repository", "database_access", "database_client", "database_migration", "persistence_unit":
 		return "DataStore"
 	case "table":
 		return "Table"
@@ -272,6 +272,20 @@ func dependencyNodeKind(kind string) string {
 		return "ExternalApi"
 	case "external_dependency":
 		return "ExternalDependency"
+	case "mail_server":
+		return "ExternalApi"
+	case "ftp_endpoint":
+		return "ExternalApi"
+	case "ui_api_call":
+		return "ExternalApi"
+	case "ui_websocket":
+		return "ExternalApi"
+	case "http_filter":
+		return "Dependency"
+	case "cache":
+		return "DataStore"
+	case "auth_provider":
+		return "Dependency"
 	case "config_property":
 		return "ConfigProperty"
 	default:
@@ -281,7 +295,7 @@ func dependencyNodeKind(kind string) string {
 
 func dependencyEdgeKind(kind string) string {
 	switch kind {
-	case "datastore", "database_repository", "database_access", "database_client", "repository_call", "table":
+	case "datastore", "database_repository", "database_access", "database_client", "database_migration", "persistence_unit", "repository_call", "table", "cache", "auth_provider", "ui_api_call", "ui_websocket":
 		return "depends_on"
 	case "bucket":
 		return "depends_on"

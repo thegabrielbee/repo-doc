@@ -1,7 +1,9 @@
 package flow
 
 import (
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/bee/java-process-mapper/internal/model"
 )
@@ -63,6 +65,8 @@ func Build(project *model.Project, entry model.EntryPoint) Trace {
 	entryType := idx.typeByID[entry.ClassID]
 	if entry.MethodID == "" || entryMethod.ID == "" {
 		trace.Dependencies = dependenciesFor(project, idx, map[string]int{}, map[string]int{entry.ClassID: 0})
+		trace.Dependencies = appendHTTPFilters(project, idx, entry, trace.Dependencies)
+		trace.Dependencies = appendUIClientCalls(project, entry, trace.Dependencies)
 		trace.ConfigProperties = configForDependencies(project, trace.Dependencies)
 		return trace
 	}
@@ -137,6 +141,8 @@ func Build(project *model.Project, entry model.EntryPoint) Trace {
 	_ = entryType
 	walk(entry.MethodID, 0)
 	trace.Dependencies = dependenciesFor(project, idx, methodDepth, typeDepth)
+	trace.Dependencies = appendHTTPFilters(project, idx, entry, trace.Dependencies)
+	trace.Dependencies = appendUIClientCalls(project, entry, trace.Dependencies)
 	trace.ConfigProperties = configForDependencies(project, trace.Dependencies)
 	return trace
 }
@@ -222,6 +228,209 @@ func configForDependencies(project *model.Project, deps []DependencyUse) []model
 		}
 	}
 	return props
+}
+
+func appendHTTPFilters(project *model.Project, idx indexes, entry model.EntryPoint, deps []DependencyUse) []DependencyUse {
+	if project == nil || !entrySupportsHTTPFilters(entry) {
+		return deps
+	}
+	entryPath := strings.TrimSpace(entry.Path)
+	if entryPath == "" {
+		return deps
+	}
+	entryModuleID := moduleIDForEntry(project, idx, entry)
+	seen := map[string]bool{}
+	for _, dep := range deps {
+		seen[dep.Dependency.ID] = true
+	}
+	for _, dep := range project.Dependencies {
+		if dep.Kind != "http_filter" || seen[dep.ID] {
+			continue
+		}
+		if !httpPatternMatches(dep.Detail, entryPath) {
+			continue
+		}
+		filterModuleID := moduleIDForDependency(project, idx, dep)
+		if entryModuleID != "" && filterModuleID != "" && entryModuleID != filterModuleID {
+			continue
+		}
+		typ := idx.typeByID[dep.ClassID]
+		deps = append(deps, DependencyUse{
+			Dependency: dep,
+			Scope:      "direct",
+			ViaClass:   typ.FQN,
+			Depth:      0,
+		})
+		seen[dep.ID] = true
+	}
+	sort.Slice(deps, func(i, j int) bool {
+		if deps[i].Depth != deps[j].Depth {
+			return deps[i].Depth < deps[j].Depth
+		}
+		return deps[i].Dependency.ID < deps[j].Dependency.ID
+	})
+	return deps
+}
+
+func appendUIClientCalls(project *model.Project, entry model.EntryPoint, deps []DependencyUse) []DependencyUse {
+	if project == nil || entry.Kind != "ui_page" || strings.TrimSpace(entry.Path) == "" {
+		return deps
+	}
+	seen := map[string]bool{}
+	for _, dep := range deps {
+		seen[dep.Dependency.ID] = true
+	}
+	for _, dep := range project.Dependencies {
+		if dep.Kind != "ui_api_call" && dep.Kind != "ui_websocket" {
+			continue
+		}
+		if seen[dep.ID] || dep.Detail != entry.Path || !samePath(dep.Evidence.Path, entry.Evidence.Path) {
+			continue
+		}
+
+		if dep.ClassID == "" || dep.MethodID == "" {
+			classID, methodID := resolveBackendEndpoint(project, dep.Name)
+			if classID != "" {
+				dep.ClassID = classID
+				dep.MethodID = methodID
+			}
+		}
+
+		deps = append(deps, DependencyUse{
+			Dependency: dep,
+			Scope:      "direct",
+			Depth:      0,
+		})
+		seen[dep.ID] = true
+	}
+	sort.Slice(deps, func(i, j int) bool {
+		if deps[i].Depth != deps[j].Depth {
+			return deps[i].Depth < deps[j].Depth
+		}
+		return deps[i].Dependency.ID < deps[j].Dependency.ID
+	})
+	return deps
+}
+
+func resolveBackendEndpoint(project *model.Project, target string) (string, string) {
+	targetLower := strings.ToLower(target)
+	var bestMatch *model.EntryPoint
+	longestMatch := -1
+
+	for i := range project.EntryPoints {
+		ep := &project.EntryPoints[i]
+		if ep.Kind != "http" && ep.Kind != "websocket" {
+			continue
+		}
+		
+		if ep.Kind == "http" && ep.HTTPMethod != "" {
+			if !strings.HasPrefix(targetLower, strings.ToLower(ep.HTTPMethod)+" ") {
+				continue
+			}
+		}
+
+		epPath := strings.ToLower(ep.Path)
+		epPath = strings.TrimPrefix(epPath, "/")
+		
+		if epPath == "" {
+			continue
+		}
+
+		if strings.Contains(targetLower, "/"+epPath) || strings.HasSuffix(targetLower, epPath) {
+			if len(epPath) > longestMatch {
+				longestMatch = len(epPath)
+				bestMatch = ep
+			}
+		}
+	}
+	if bestMatch != nil {
+		return bestMatch.ClassID, bestMatch.MethodID
+	}
+	return "", ""
+}
+
+func moduleIDForEntry(project *model.Project, idx indexes, entry model.EntryPoint) string {
+	if typ := idx.typeByID[entry.ClassID]; typ.ModuleID != "" {
+		return typ.ModuleID
+	}
+	return moduleIDForPath(project, entry.Evidence.Path)
+}
+
+func moduleIDForDependency(project *model.Project, idx indexes, dep model.Dependency) string {
+	if typ := idx.typeByID[dep.ClassID]; typ.ModuleID != "" {
+		return typ.ModuleID
+	}
+	return moduleIDForPath(project, dep.Evidence.Path)
+}
+
+func moduleIDForPath(project *model.Project, path string) string {
+	if project == nil || path == "" {
+		return ""
+	}
+	for _, module := range project.Modules {
+		for _, candidate := range module.JavaFiles {
+			if samePath(candidate, path) {
+				return module.ID
+			}
+		}
+		for _, candidate := range module.DescriptorFiles {
+			if samePath(candidate, path) {
+				return module.ID
+			}
+		}
+		for _, candidate := range module.UIFiles {
+			if samePath(candidate, path) {
+				return module.ID
+			}
+		}
+	}
+	return ""
+}
+
+func samePath(left, right string) bool {
+	left = filepath.ToSlash(filepath.Clean(left))
+	right = filepath.ToSlash(filepath.Clean(right))
+	return strings.EqualFold(left, right)
+}
+
+func entrySupportsHTTPFilters(entry model.EntryPoint) bool {
+	switch entry.Kind {
+	case "http", "servlet":
+		return true
+	default:
+		return false
+	}
+}
+
+func httpPatternMatches(pattern, path string) bool {
+	pattern = normalizeHTTPPath(pattern)
+	path = normalizeHTTPPath(path)
+	if pattern == "" || path == "" {
+		return false
+	}
+	if pattern == "/" || pattern == "/*" {
+		return true
+	}
+	if strings.HasPrefix(pattern, "*.") {
+		return strings.HasSuffix(path, strings.TrimPrefix(pattern, "*"))
+	}
+	if strings.HasSuffix(pattern, "/*") {
+		prefix := strings.TrimSuffix(pattern, "/*")
+		return path == prefix || strings.HasPrefix(path, prefix+"/")
+	}
+	return pattern == path
+}
+
+func normalizeHTTPPath(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, "\"'")
+	if value == "" {
+		return ""
+	}
+	if !strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "*.") {
+		value = "/" + value
+	}
+	return value
 }
 
 func minDepth(depths map[string]int, key string, candidate int) int {

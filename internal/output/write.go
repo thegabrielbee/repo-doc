@@ -3,6 +3,7 @@ package output
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"html"
 	"os"
 	"path/filepath"
@@ -118,7 +119,7 @@ func renderIndex(project *model.Project) string {
 
 	fmt.Fprintf(&b, "## Processos detectados\n\n")
 	if len(project.EntryPoints) == 0 {
-		fmt.Fprintf(&b, "Nenhum entrypoint Spring foi identificado.\n\n")
+		fmt.Fprintf(&b, "Nenhum entrypoint foi identificado.\n\n")
 	} else {
 		fmt.Fprintf(&b, "| Tipo | Nome tecnico | Entrada | Evidencia |\n| --- | --- | --- | --- |\n")
 		for _, entry := range project.EntryPoints {
@@ -259,6 +260,13 @@ func renderVisualization(project *model.Project, traces map[string]flow.Trace) s
 	}
 	sourceLines := newSourceLineReader()
 	sourceContexts := newSourceContextStore()
+	processCards := map[string]string{}
+	for _, entry := range entries {
+		trace := traces[entry.ID]
+		var card strings.Builder
+		renderProcessHTML(&card, project, trace, sourceLines, sourceContexts)
+		processCards[htmlID(entry.ID)] = card.String()
+	}
 
 	var b strings.Builder
 	b.WriteString("<!doctype html>\n")
@@ -359,7 +367,8 @@ nav a {
   padding: 10px 14px;
   text-decoration: none;
 }
-nav a:hover { background: var(--accent-soft); }
+nav a:hover, nav a.active { background: var(--accent-soft); }
+nav a.active { border-left: 4px solid var(--accent); padding-left: 10px; }
 nav span, .meta-row span {
   color: var(--muted);
   display: block;
@@ -426,7 +435,7 @@ nav strong {
   border-color: var(--accent);
   color: #fff;
 }
-.view[hidden] { display: none; }
+[hidden] { display: none !important; }
 .graph-layout {
   display: grid;
   gap: 14px;
@@ -592,6 +601,13 @@ code {
   color: var(--muted);
   padding: 14px;
 }
+.process-placeholder {
+  background: var(--panel);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  padding: 18px;
+}
 .auxiliary-list {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -658,15 +674,21 @@ code {
 		searchText := strings.ToLower(strings.Join([]string{
 			entry.Kind,
 			entry.Name,
-			entryLabel(entry),
-			fmt.Sprintf("%d chamadas", len(trace.Steps)),
-			fmt.Sprintf("%d deps", len(trace.Dependencies)),
 		}, " "))
-		fmt.Fprintf(&b, "<a href=\"#%s\" data-process-link data-process-search=\"%s\"><span>%s</span><strong>%s</strong><span>%d chamadas - %d deps</span></a>\n",
-			h(htmlID(entry.ID)),
+		processID := htmlID(entry.ID)
+		var pathDisplay string
+		if entry.Evidence.Path != "" {
+			pathDisplay = fmt.Sprintf("<span style=\"word-break: break-all; margin-top: 4px; margin-bottom: 4px;\">%s</span>", h(entry.Evidence.Path))
+		} else if entry.Path != "" {
+			pathDisplay = fmt.Sprintf("<span style=\"word-break: break-all; margin-top: 4px; margin-bottom: 4px;\">%s</span>", h(entry.Path))
+		}
+		fmt.Fprintf(&b, "<a href=\"#%s\" data-process-link data-process-id=\"%s\" data-process-search=\"%s\"><span>%s</span><strong>%s</strong>%s<span>%d chamadas - %d deps</span></a>\n",
+			h(processID),
+			h(processID),
 			h(searchText),
 			h(entry.Kind),
 			h(entry.Name),
+			pathDisplay,
 			len(trace.Steps),
 			len(trace.Dependencies),
 		)
@@ -674,15 +696,23 @@ code {
 	b.WriteString("</nav>\n</aside>\n<section>\n")
 	if len(entries) == 0 {
 		b.WriteString("<div class=\"empty\">Nenhum processo detectado.</div>\n")
-	}
-	for _, entry := range entries {
-		trace := traces[entry.ID]
-		renderProcessHTML(&b, project, trace, sourceLines, sourceContexts)
+	} else {
+		b.WriteString("<div data-process-detail><div class=\"process-placeholder\">Selecione um processo na lista para ver o fluxo.</div></div>\n")
 	}
 	b.WriteString("</section>\n</main>\n")
+	fmt.Fprintf(&b, "<script id=\"process-cards\" type=\"application/json\">%s</script>\n", jsonScript(processCards))
 	fmt.Fprintf(&b, "<script id=\"source-contexts\" type=\"application/json\">%s</script>\n", sourceContexts.json())
 	b.WriteString(`<script>
 (function () {
+  var processCards = {};
+  var processCardsEl = document.getElementById('process-cards');
+  if (processCardsEl) {
+    try {
+      processCards = JSON.parse(processCardsEl.textContent || '{}');
+    } catch (error) {
+      processCards = {};
+    }
+  }
   var sourceContexts = {};
   var sourceContextEl = document.getElementById('source-contexts');
   if (sourceContextEl) {
@@ -722,6 +752,47 @@ code {
     }).join('') + '</dl>';
   }
 
+  function normalizeSearchText(value) {
+    value = String(value || '').toLowerCase();
+    if (value.normalize) {
+      value = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    }
+    return value;
+  }
+
+  function processCardText(processID) {
+    var template = document.createElement('template');
+    template.innerHTML = processCards[processID] || '';
+    return template.content.textContent || template.textContent || '';
+  }
+
+  function processIDFromHash() {
+    return window.location.hash ? window.location.hash.slice(1) : "";
+  }
+
+  function setActiveProcessLink(processID) {
+    document.querySelectorAll('[data-process-link]').forEach(function (link) {
+      link.classList.toggle('active', link.getAttribute('data-process-id') === processID);
+    });
+  }
+
+  function renderSelectedProcess(processID) {
+    var detail = document.querySelector('[data-process-detail]');
+    if (!detail) {
+      return false;
+    }
+    if (!processID || !processCards[processID]) {
+      detail.innerHTML = '<div class="process-placeholder">Selecione um processo na lista para ver o fluxo.</div>';
+      setActiveProcessLink('');
+      return false;
+    }
+    detail.innerHTML = processCards[processID];
+    setActiveProcessLink(processID);
+    setupAuxiliaryPagination(detail);
+    detail.querySelectorAll('[data-view="graph"]:not([hidden]) [data-pan-zoom]').forEach(initializeGraph);
+    return true;
+  }
+
   function setupProcessSearch() {
     var input = document.querySelector('[data-process-search-input]');
     var status = document.querySelector('[data-process-search-status]');
@@ -729,18 +800,23 @@ code {
     if (!input || !status || !links.length) {
       return;
     }
+    links.forEach(function (link) {
+      link.__searchText = normalizeSearchText(link.getAttribute('data-process-search') || '');
+    });
     function applyFilter() {
-      var query = input.value.trim().toLowerCase();
+      var terms = normalizeSearchText(input.value).trim().split(/\s+/).filter(Boolean);
       var visible = 0;
       links.forEach(function (link) {
-        var haystack = link.getAttribute('data-process-search') || '';
-        var match = query === '' || haystack.indexOf(query) >= 0;
+        var haystack = link.__searchText || '';
+        var match = terms.length === 0 || terms.every(function (term) {
+          return haystack.indexOf(term) >= 0;
+        });
         link.hidden = !match;
         if (match) {
           visible++;
         }
       });
-      status.textContent = query ? (visible + ' de ' + links.length + ' processos') : (links.length + ' processos');
+      status.textContent = terms.length ? (visible + ' de ' + links.length + ' processos') : (links.length + ' processos');
     }
     input.addEventListener('input', applyFilter);
     input.addEventListener('keydown', function (event) {
@@ -752,8 +828,13 @@ code {
     applyFilter();
   }
 
-  function setupAuxiliaryPagination() {
-    document.querySelectorAll('[data-aux-list]').forEach(function (list) {
+  function setupAuxiliaryPagination(root) {
+    root = root || document;
+    root.querySelectorAll('[data-aux-list]').forEach(function (list) {
+      if (list.__auxReady) {
+        return;
+      }
+      list.__auxReady = true;
       var rows = Array.prototype.slice.call(list.querySelectorAll('[data-aux-row]'));
       var prev = list.querySelector('[data-aux-prev]');
       var next = list.querySelector('[data-aux-next]');
@@ -971,6 +1052,17 @@ code {
   }
 
   document.addEventListener('click', function (event) {
+    var processLink = event.target.closest('[data-process-link]');
+    if (processLink) {
+      event.preventDefault();
+      var processID = processLink.getAttribute('data-process-id') || '';
+      if (processID) {
+        history.replaceState(null, '', '#' + processID);
+      }
+      renderSelectedProcess(processID);
+      return;
+    }
+
     var viewButton = event.target.closest('[data-view-button]');
     if (viewButton) {
       var process = viewButton.closest('.process');
@@ -1000,11 +1092,15 @@ code {
     selectGraphItem(item);
   });
 
-  document.querySelectorAll('[data-view="graph"]:not([hidden]) [data-pan-zoom]').forEach(initializeGraph);
   setupProcessSearch();
-  setupAuxiliaryPagination();
+  if (processIDFromHash()) {
+    renderSelectedProcess(processIDFromHash());
+  }
   window.addEventListener('resize', function () {
     document.querySelectorAll('[data-view="graph"]:not([hidden]) [data-pan-zoom]').forEach(fitGraph);
+  });
+  window.addEventListener('hashchange', function () {
+    renderSelectedProcess(processIDFromHash());
   });
 })();
 </script>
@@ -1231,7 +1327,11 @@ func (s *sourceContextStore) json() string {
 	if s == nil || len(s.values) == 0 {
 		return "{}"
 	}
-	data, err := json.Marshal(s.values)
+	return jsonScript(s.values)
+}
+
+func jsonScript(value any) string {
+	data, err := json.Marshal(value)
 	if err != nil {
 		return "{}"
 	}
@@ -2644,6 +2744,7 @@ func valueOrUnknown(value string) string {
 }
 
 func safeFileName(value string) string {
+	orig := value
 	value = strings.ToLower(value)
 	var b strings.Builder
 	lastDash := false
@@ -2664,7 +2765,9 @@ func safeFileName(value string) string {
 		value = strings.ReplaceAll(value, "--", "-")
 	}
 	if len(value) > 120 {
-		value = value[:120]
+		h := fnv.New32a()
+		h.Write([]byte(orig))
+		value = fmt.Sprintf("%s-%x", value[:100], h.Sum32())
 	}
 	return value
 }

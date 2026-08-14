@@ -14,6 +14,8 @@ func Resolve(names []string) []Addon {
 	var addons []Addon
 	for _, name := range names {
 		switch name {
+		case "javaee":
+			addons = append(addons, JavaEE{})
 		case "spring":
 			addons = append(addons, Spring{})
 		}

@@ -1,13 +1,13 @@
 # Features propostas
 
-## Fase 1: mapeamento Java/Spring e documentacao
+## Fase 1: mapeamento Java/Spring/Java EE e documentacao
 
 | ID | Feature | Descricao | Prioridade |
 | --- | --- | --- | --- |
 | F01 | Descoberta da base Java | Identificar modulos, pacotes, arquivos Java, Maven/Gradle, versao alvo e estrutura do projeto. | Alta |
 | F02 | Parser Java por AST | Gerar arvore sintatica dos arquivos Java, com suporte esperado de Java 8 a Java 21. ANTLR e o candidato principal citado. | Alta |
 | F03 | Extracao de classes e metodos | Mapear packages, imports, classes, interfaces, enums, records, metodos, assinaturas, annotations e chamadas relevantes. | Alta |
-| F04 | Deteccao de pontos de entrada Spring | Encontrar controllers, endpoints, schedulers, listeners, batch jobs, runners e consumers de mensageria. | Alta |
+| F04 | Deteccao de pontos de entrada por add-on | Encontrar controllers/endpoints Spring e somente entrypoints Java EE/Jakarta EE realmente invocados por HTTP/SOAP/WebSocket, timer, lifecycle, mensageria, eventos CDI, Servlets, Listeners e telas UI XHTML/JSP/HTML, incluindo chamadas client-side a HTTP/WebSocket; Filters entram como pipeline dentro dos fluxos HTTP aplicaveis. | Alta |
 | F05 | Mapeamento de processo | Para cada ponto de entrada, montar o fluxo tecnico inicial: inicio, chamadas internas, decisoes, saidas e erros principais. | Alta |
 | F06 | Agrupamento por produto e feature | Inferir produto, dominio e feature a partir de package, nomes, endpoints, annotations, tabelas, topicos e convencoes. | Alta |
 | F07 | Mapeamento de entradas e saidas | Identificar inputs aceitos, payloads, tipos, parametros, eventos, comandos, respostas e outputs relevantes. | Alta |
@@ -33,5 +33,5 @@
 - Rodar em bases grandes sem exigir execucao da aplicacao.
 - Produzir documentacao incremental e revisavel.
 - Preservar evidencias de origem para auditoria do documento.
-- Ser extensivel para novos frameworks Spring e, no futuro, outras linguagens.
+- Ser extensivel para novos frameworks, tecnologias Java e, no futuro, outras linguagens.
 - Evitar coleta de segredos e variaveis de ambiente.

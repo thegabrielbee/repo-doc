@@ -4,6 +4,7 @@ type Options struct {
 	RootPath     string
 	OutputDir    string
 	Addons       []string
+	JavaVersion  string
 	IncludeTests bool
 }
 
