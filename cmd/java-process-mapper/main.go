@@ -1,110 +1,74 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
-	"strings"
-
-	"github.com/bee/java-process-mapper/internal/analysis"
-	"github.com/bee/java-process-mapper/internal/mcpserver"
-	"github.com/bee/java-process-mapper/internal/pipeline"
+	"os/exec"
+	"path/filepath"
 )
 
-const version = "0.1.0"
-
 func main() {
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
-	}
-
-	switch os.Args[1] {
-	case "serve":
-		if err := mcpserver.New().Run(context.Background()); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-	case "scan":
-		if err := runScan(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-	case "version", "--version", "-v":
-		fmt.Println(version)
-	case "help", "--help", "-h":
-		usage()
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
-		usage()
-		os.Exit(2)
-	}
-}
-
-func runScan(args []string) error {
-	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	root := fs.String("root", "", "path to Java repository root")
-	out := fs.String("out", "", "output directory")
-	addons := fs.String("addons", "spring", "comma-separated addons; default spring, use javaee for Java EE/Jakarta EE")
-	javaVersion := fs.String("java-version", "", "override Java source version, for example 8, 11, 17 or 21")
-	includeTests := fs.Bool("include-tests", false, "include test source folders")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if *root == "" {
-		return fmt.Errorf("--root is required")
-	}
-	result, err := pipeline.Run(analysis.Options{
-		RootPath:     *root,
-		OutputDir:    *out,
-		Addons:       splitCSV(*addons),
-		JavaVersion:  *javaVersion,
-		IncludeTests: *includeTests,
-	}, nil)
+	root, err := repoRoot()
 	if err != nil {
-		return err
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	summary := map[string]any{
-		"status":    "completed",
-		"outputDir": result.Artifacts.OutputDir,
-		"artifacts": result.Artifacts,
-		"summary":   result.Summary,
-	}
-	encoded, err := json.MarshalIndent(summary, "", "  ")
+	cmd, err := pythonCommand(root, os.Args[1:])
 	if err != nil {
-		return err
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	fmt.Println(string(encoded))
-	return nil
-}
-
-func splitCSV(value string) []string {
-	if strings.TrimSpace(value) == "" {
-		return nil
-	}
-	var result []string
-	for _, part := range strings.Split(value, ",") {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			result = append(result, part)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
 		}
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-	return result
 }
 
-func usage() {
-	fmt.Fprintf(os.Stderr, `java-process-mapper %s
+func pythonCommand(root string, args []string) (*exec.Cmd, error) {
+	for _, name := range []string{"python", "python3", "py"} {
+		if _, err := exec.LookPath(name); err != nil {
+			continue
+		}
+		cmdArgs := []string{"-m", "java_process_mapper"}
+		if name == "py" {
+			cmdArgs = []string{"-3", "-m", "java_process_mapper"}
+		}
+		cmdArgs = append(cmdArgs, args...)
+		cmd := exec.Command(name, cmdArgs...)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), "JAVA_PROCESS_MAPPER_REPO_ROOT="+root)
+		return cmd, nil
+	}
+	return nil, fmt.Errorf("python executable not found")
+}
 
-Usage:
-  java-process-mapper serve
-  java-process-mapper scan --root <path> --out <path> --addons spring
-  java-process-mapper scan --root <path> --addons javaee --java-version 8
+func repoRoot() (string, error) {
+	if root := os.Getenv("JAVA_PROCESS_MAPPER_REPO_ROOT"); root != "" {
+		return filepath.Clean(root), nil
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	for {
+		if exists(filepath.Join(dir, "java_process_mapper", "cli.py")) && exists(filepath.Join(dir, "go.mod")) {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("could not locate repository root from %s", dir)
+		}
+		dir = parent
+	}
+}
 
-Commands:
-  serve   Start MCP server over stdio.
-  scan    Run the same mapping pipeline locally and print a JSON summary.
-`, version)
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

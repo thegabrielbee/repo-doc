@@ -1,0 +1,15 @@
+[project]
+name = "java-process-mapper"
+version = "0.1.0"
+description = "Static Java process mapper CLI."
+requires-python = ">=3.10"
+
+[project.scripts]
+java-process-mapper = "java_process_mapper.cli:main"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["java_process_mapper*"]

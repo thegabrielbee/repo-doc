@@ -4,4 +4,6 @@
 /coverage.out
 *.exe
 *.test
+__pycache__/
+*.pyc
 .codex/

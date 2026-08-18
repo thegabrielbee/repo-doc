@@ -5,12 +5,18 @@ normalizados que aparecem nos artefatos gerados.
 
 ## CLI
 
+A CLI publica e implementada em Python e delega a execucao pesada para o core
+Go interno. Ela pode ser chamada pelo script instalado `java-process-mapper`,
+por `python -m java_process_mapper` ou pelo shim de compatibilidade
+`go run ./cmd/java-process-mapper`.
+
 ### `serve`
 
 Inicia o servidor MCP via stdio.
 
 ```bash
 java-process-mapper serve
+python -m java_process_mapper serve
 ```
 
 ### `scan`
@@ -21,6 +27,7 @@ Executa o mapeamento local e imprime um resumo JSON.
 java-process-mapper scan --root <repo> --out <dir> --addons spring
 java-process-mapper scan --root <repo> --addons javaee --java-version 8
 java-process-mapper scan --root <repo> --addons spring,javaee
+python -m java_process_mapper scan --root <repo> --addons javaee --java-version 8
 ```
 
 | Parametro | Obrigatorio | Padrao | Valores aceitos | Descricao |
