@@ -25,7 +25,7 @@
 | ID | Feature | Descricao | Prioridade |
 | --- | --- | --- | --- |
 | F16 | Visualizacao AST para grafo | Demonstrar a passagem de arvore sintatica para grafo de conexoes entre processos. | Media |
-| F17 | Relacao entre servicos heterogeneos | Preparar extensao futura para comparar Java com outras linguagens, como Go, mas sem implementar na fase 1. | Baixa |
+| F17 | Relacao entre servicos heterogeneos | Preparar extensao futura para comparar Java com outras linguagens, mas sem implementar na fase 1. | Baixa |
 | F18 | Identificacao via telemetria | Avaliar uso de padroes de telemetria ou OpenTelemetry para correlacionar servicos e relacoes em cenarios futuros. | Baixa |
 
 ## Requisitos nao funcionais iniciais

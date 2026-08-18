@@ -5,10 +5,9 @@ normalizados que aparecem nos artefatos gerados.
 
 ## CLI
 
-A CLI publica e implementada em Python e delega a execucao pesada para o core
-Go interno. Ela pode ser chamada pelo script instalado `java-process-mapper`,
-por `python -m java_process_mapper` ou pelo shim de compatibilidade
-`go run ./cmd/java-process-mapper`.
+A CLI publica e o pipeline de analise sao implementados em Python. A ferramenta
+pode ser chamada pelo script instalado `java-process-mapper` ou por
+`python -m java_process_mapper`.
 
 ### `serve`
 

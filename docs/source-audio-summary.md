@@ -47,9 +47,9 @@ com algo como:
 ## Observacao sobre futuro
 
 O audio cita uma possivel demonstracao futura comparando microservicos em Java
-e Go, mostrando visualmente a criacao da AST e a transformacao para grafo. Para
-o escopo atual, o direcionamento confirmado e focar somente em Java, de Java 8
-a Java 21, majoritariamente Spring.
+com outros stacks, mostrando visualmente a criacao da AST e a transformacao
+para grafo. Para o escopo atual, o direcionamento confirmado e focar somente em
+Java, de Java 8 a Java 21, com Spring e Java EE/Jakarta EE legado.
 
 ## Restricao adicionada no alinhamento
 

@@ -32,7 +32,7 @@ O foco inicial e transformar codigo fonte em entendimento navegavel:
 ## Fora do escopo por enquanto
 
 - Analise de variaveis de ambiente.
-- Suporte a Go ou outras linguagens na fase 1.
+- Suporte a outras linguagens na fase 1.
 - Definicao final de UX, fluxo de perguntas do agente ou workflow interativo.
 - Execucao runtime obrigatoria da aplicacao analisada.
 
