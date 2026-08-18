@@ -25,6 +25,7 @@ Usar estas tools do MCP server de mapeamento quando estiverem disponiveis:
 - `get_mapping_status`
 - `get_mapping_result`
 - `get_next_mapping_item`
+- `get_mapping_item`
 - `mark_mapping_item_mapped`
 
 Se o MCP server nao estiver disponivel, informar que o mapper precisa estar rodando via stdio antes de executar o workflow.
@@ -83,6 +84,22 @@ Chamar `get_next_mapping_item` com:
 ```
 
 Se a resposta indicar `done: true`, informar que nao ha entrypoints pendentes.
+
+Se o usuario pedir um documento/entrypoint especifico, chamar `get_mapping_item`
+em vez de `get_next_mapping_item`. Usar `entryPointId` quando disponivel; caso
+contrario usar `entryPointName`, `title`, `documentPath`, `index` ou `query`.
+
+```json
+{
+  "jobId": "<jobId>",
+  "entryPointName": "<nome do entrypoint>",
+  "includeMechanicalMarkdown": true
+}
+```
+
+Se a resposta vier com `status: "ambiguous"`, apresentar os candidatos ao
+usuario ou escolher pelo `entryPointId` quando a conversa ja deixar claro qual
+item foi selecionado.
 
 Se retornar um item, usar o pacote mecanico como fonte de evidencia:
 

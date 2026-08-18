@@ -70,7 +70,18 @@ Exemplo:
 | `get_mapping_status` | `jobId` | Retorna status, fase, contadores, erro e outputDir. |
 | `get_mapping_result` | `jobId` | Retorna artefatos e resumo quando o job esta completo. |
 | `get_next_mapping_item` | `jobId`, `includeMechanicalMarkdown` | Retorna o proximo entrypoint pendente e, opcionalmente, o Markdown mecanico. |
+| `get_mapping_item` | `jobId`, `entryPointId` ou `entryPointName` ou `title` ou `query` ou `documentPath` ou `index`, `includeMechanicalMarkdown` | Retorna um entrypoint/documento especifico em vez do proximo pendente. `query` pode retornar `ambiguous` com candidatos quando houver mais de um resultado. |
 | `mark_mapping_item_mapped` | `jobId`, `entryPointId`, `markdown`, `title`, `notes`, `finalDocPath` | Salva a documentacao final de um item e marca como mapeado. |
+
+Exemplo de selecao explicita:
+
+```json
+{
+  "jobId": "<jobId>",
+  "entryPointName": "OrderResource.get",
+  "includeMechanicalMarkdown": true
+}
+```
 
 ## Add-ons
 

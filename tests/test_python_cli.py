@@ -8,6 +8,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from java_process_mapper.mcp import JOBS, call_tool
+
 
 class PythonCLITest(unittest.TestCase):
     def test_version(self) -> None:
@@ -82,6 +84,63 @@ class PythonCLITest(unittest.TestCase):
             self.assertIn("data-process-search-input", visual)
             self.assertIn("renderSelectedProcess", visual)
             self.assertNotIn('<article class="process"', visual.split('<script type="application/json"', 1)[0])
+
+    def test_mcp_can_select_specific_mapping_item(self) -> None:
+        JOBS.clear()
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            source_root = javaee_fixture(temp_path / "fixture")
+            output_dir = temp_path / "out"
+
+            started = call_tool(
+                "start_mapping",
+                {
+                    "rootPath": str(source_root),
+                    "outputDir": str(output_dir),
+                    "addons": ["javaee"],
+                    "javaVersion": "8",
+                },
+            )
+            job_id = started["jobId"]
+
+            selected = call_tool(
+                "get_mapping_item",
+                {
+                    "jobId": job_id,
+                    "entryPointName": "OrderSoap.submit",
+                    "includeMechanicalMarkdown": True,
+                },
+            )
+
+            self.assertEqual(selected["status"], "found")
+            self.assertEqual(selected["item"]["entryPoint"]["name"], "OrderSoap.submit")
+            self.assertEqual(selected["item"]["entryPoint"]["kind"], "soap")
+            self.assertIn("# OrderSoap.submit", selected["mechanicalMarkdown"])
+            self.assertTrue(selected["item"]["processDocPath"].endswith("soap-ordersoap-submit.md"))
+
+            selected_by_doc = call_tool(
+                "get_mapping_item",
+                {
+                    "jobId": job_id,
+                    "documentPath": "soap-ordersoap-submit.md",
+                },
+            )
+            self.assertEqual(selected_by_doc["item"]["entryPointId"], selected["item"]["entryPointId"])
+
+            marked = call_tool(
+                "mark_mapping_item_mapped",
+                {
+                    "jobId": job_id,
+                    "entryPointId": selected["item"]["entryPointId"],
+                    "title": "Submit order SOAP",
+                    "markdown": "# Submit order SOAP\n",
+                },
+            )
+            self.assertEqual(marked["status"], "mapped")
+            self.assertTrue(Path(marked["finalDocPath"]).exists())
+
+            selected_again = call_tool("get_mapping_item", {"jobId": job_id, "entryPointId": selected["item"]["entryPointId"]})
+            self.assertEqual(selected_again["item"]["status"], "mapped")
 
 
 def javaee_fixture(root: Path) -> Path:
